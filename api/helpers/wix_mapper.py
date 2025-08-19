@@ -1,3 +1,5 @@
+from dateutil import parser
+
 def map_wix_product_to_db_model(wix_product: dict) -> dict:
     price_data = wix_product.get("priceData", {})
     discount_data = wix_product.get("discount", {})
@@ -12,6 +14,8 @@ def map_wix_product_to_db_model(wix_product: dict) -> dict:
         "discounted_price": price_data.get("discountedPrice", 0.0),
         "discounted_type": discount_data.get("type"),
         "discounted_amount": discount_data.get("amount", 0.0),
+        "created_date": parser.parse(wix_product.get("createdDate")),
+        "last_updated": parser.parse(wix_product.get("lastUpdated")),
         "images": [],  # to fill
         "category_ids": wix_product.get("collectionIds"),  # to fill
         "additional_info": [],  # optional

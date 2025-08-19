@@ -86,6 +86,8 @@ class Product(Base):
     discounted_type = Column(String)
     discounted_amount = Column(Double)
     discounted_price = Column(Double)
+    created_date = Column(DateTime)
+    last_updated = Column(DateTime)
     additional_info_sections = relationship(
         "ProductAdditionalInfo", back_populates="product", cascade="all, delete"
     )

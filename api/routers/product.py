@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.security import OAuth2PasswordRequestForm
-from typing import Annotated, List
-from datetime import timedelta
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import asc, desc
+from sqlalchemy.orm import joinedload
+from typing import List
+
 from starlette import status
 
 from services.wix_api_service import wix_post_request
@@ -70,6 +71,8 @@ async def sync_wix_products(user: user_dependency, db: db_dependency):
                 "discounted_price",
                 "discounted_type",
                 "discounted_amount",
+                "created_date",
+                "last_updated",
                 "visible_in_wix",
                 "weight",
             ]:
@@ -117,10 +120,50 @@ async def sync_wix_products(user: user_dependency, db: db_dependency):
 
 
 # 🚀 Get all products
-@router.get("/products", response_model=List[ProductSchema])
+@router.get("/", response_model=List[ProductSchema])
 def get_all_products(db: db_dependency, user: user_dependency):
-    products = db.query(Product).all()
+    products = db.query(Product).order_by(Product.last_updated.desc()).all()
     return products
+
+@router.get("/filter", response_model=List[ProductSchema])
+def filter_products(
+    db: db_dependency,
+    user: user_dependency,
+    name: str | None = Query(None),
+    min_price: float | None = Query(None),
+    max_price: float | None = Query(None),
+    category_id: int | None = Query(None),
+    order_by: str | None = Query("last_updated"),
+    order_dir: str | None = Query("desc"),
+):
+    query = db.query(Product).options(
+        joinedload(Product.categories),
+        joinedload(Product.images),
+        joinedload(Product.additional_info_sections),
+    )
+
+    # 🔍 Filtering
+    if name:
+        query = query.filter(Product.name.ilike(f"%{name}%"))
+
+    if min_price is not None:
+        query = query.filter(Product.price >= min_price)
+
+    if max_price is not None:
+        query = query.filter(Product.price <= max_price)
+
+    if category_id:
+        query = query.join(Product.categories).filter(Category.id == category_id)
+
+    # ↕️ Ordering
+    sort_column = getattr(Product, order_by, None)
+    if sort_column is not None:
+        if order_dir == "desc":
+            query = query.order_by(desc(sort_column))
+        else:
+            query = query.order_by(asc(sort_column))
+
+    return query.all()
 
 
 # 🚀 Get single product by ID
@@ -135,7 +178,7 @@ def get_product_by_id(id: int, db: db_dependency, user: user_dependency):
 # 📦 Get all categories
 @router.get("/categories", response_model=List[CategorySchema])
 def get_all_categories(db: db_dependency, user: user_dependency):
-    categories = db.query(Category).all()
+    categories = db.query(Category).order_by(Category.name.asc()).all()
     return categories
 
 
