@@ -1,5 +1,6 @@
 from dateutil import parser
 
+
 def map_wix_product_to_db_model(wix_product: dict) -> dict:
     price_data = wix_product.get("priceData", {})
     discount_data = wix_product.get("discount", {})
