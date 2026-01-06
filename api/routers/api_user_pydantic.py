@@ -1,6 +1,6 @@
-from pydantic import BaseModel, field_validator, StringConstraints
+from pydantic import BaseModel, field_validator, StringConstraints, EmailStr
 import re
-from typing import Annotated
+from typing import Annotated, Optional
 from datetime import datetime
 
 PasswordStr = Annotated[str, StringConstraints(min_length=8)]
@@ -24,6 +24,16 @@ class UserPassVerification(BaseModel):
             raise ValueError("Password must contain a special character")
         return value
 
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    role: str
+    company_id: int
+    is_active: bool
+
+    model_config = {"from_attributes": True}
 
 class RefreshTokenResponse(BaseModel):
     id: int

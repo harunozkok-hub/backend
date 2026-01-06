@@ -1,12 +1,19 @@
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Annotated
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from starlette import status
+from sqlalchemy.exc import IntegrityError
 
-from routers.auth_pydantic import CreateUserRequest
+from routers.auth_pydantic import (
+    CreateInviteRequest, 
+    CreateInviteResponse, 
+    RegisterFirstRequest, 
+    RegisterWithInviteRequest)
 from dependencies.deps import (
     db_dependency,
+    admin_dependency,
     bcrypt_context,
     ACCESS_EXPIRE_MINUTES,
     REFRESH_EXPIRE_DAYS,
@@ -14,7 +21,7 @@ from dependencies.deps import (
     SWAGGER_ACTIVE,
 )
 from services.token_service import verify_token, create_token
-from models import APIUser
+from models import APIUser, Company, CompanyInvite
 
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -28,21 +35,127 @@ def authenticate_user(email: str, password: str, db):
         return False
     return user
 
+def company_slugify(name: str) -> str:
+    # simple slug: lower + trim + replace spaces with '-'
+    return "-".join(name.strip().lower().split())
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_user(db: db_dependency, create_user_request: CreateUserRequest):
-    create_user_model = APIUser(
-        email=create_user_request.email,
-        first_name=create_user_request.first_name,
-        last_name=create_user_request.last_name,
-        hashed_password=bcrypt_context.hash(create_user_request.password),
-        role=create_user_request.role,
+
+@router.post("/register-company", status_code=status.HTTP_201_CREATED)
+async def create_user(db: db_dependency, req: RegisterFirstRequest):
+    email = req.email.lower().strip()
+    company_name = req.company_name.strip()
+    company_slug = company_slugify(company_name)
+
+    # 1) email must be unique
+    if db.query(APIUser).filter(APIUser.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # 2) company must be unique
+    if db.query(Company).filter(Company.slug == company_slug).first():
+        raise HTTPException(status_code=400, detail="Company already exists")
+
+    # Create company + admin user in one transaction
+    try:
+        company = Company(name=company_name, slug=company_slug)
+        db.add(company)
+        db.flush()  # gives company.id
+
+        user = APIUser(
+            email=email,
+            first_name=req.first_name,
+            last_name=req.last_name,
+            hashed_password=bcrypt_context.hash(req.password),
+            role="admin",
+            company_id=company.id,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    except IntegrityError:
+        db.rollback()
+        # Handles race conditions (two people try same company/email at same time)
+        raise HTTPException(status_code=409, detail="Email or company already exists")
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "role": user.role,
+        "company_id": user.company_id,
+        "company_name": company.name,
+        "company_slug": company.slug,
+    }
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register_with_invite(db: db_dependency, req: RegisterWithInviteRequest):
+    email = req.email.lower().strip()
+
+    # invite lookup
+    invite = db.query(CompanyInvite).filter(CompanyInvite.code == req.invite_code).first()
+    if not invite or invite.is_used:
+        raise HTTPException(status_code=400, detail="Invalid invite code")
+
+    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invite expired")
+
+    if invite.email and invite.email.lower().strip() != email:
+        raise HTTPException(status_code=400, detail="Invite is for a different email")
+
+    # email uniqueness
+    if db.query(APIUser).filter(APIUser.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user = APIUser(
+        email=email,
+        first_name=req.first_name,
+        last_name=req.last_name,
+        hashed_password=bcrypt_context.hash(req.password),
+        role=invite.role or "user",
+        company_id=invite.company_id,
     )
-    db.add(create_user_model)
+    db.add(user)
+
+    invite.is_used = True
+    db.add(invite)
+
+    db.commit()
+    db.refresh(user)
+
+    return {"id": user.id, "email": user.email, "role": user.role, "company_id": user.company_id}
+
+@router.post("/invite", response_model=CreateInviteResponse, status_code=status.HTTP_201_CREATED)
+async def create_invite(
+    admin: admin_dependency,
+    db: db_dependency,
+    body: CreateInviteRequest,
+):
+    # admin includes company_id from your token
+    company_id = admin.get("company_id")
+
+    # optional: prevent issuing admin invites unless you want that
+    if body.role == "admin":
+        # You can allow it, but many apps restrict it.
+        # If you want to allow only owner admins, keep it for later.
+        pass
+
+    # basic expires validation
+    if body.expires_at and body.expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="expires_at must be in the future")
+
+    code = secrets.token_urlsafe(24)
+
+    invite = CompanyInvite(
+        company_id=company_id,
+        code=code,
+        email=body.email.lower().strip() if body.email else None,
+        role=body.role,
+        expires_at=body.expires_at,
+        is_used=False,
+    )
+    db.add(invite)
     db.commit()
 
-    return create_user_model
-
+    return {"invite_code": code}
 
 @router.post("/login", status_code=status.HTTP_200_OK)
 async def login_for_access_token(
@@ -61,6 +174,7 @@ async def login_for_access_token(
         timedelta(minutes=ACCESS_EXPIRE_MINUTES),
         "access",
         None,
+        company_id=user.company_id,
     )
     refresh_token = create_token(
         user.email,
@@ -69,6 +183,7 @@ async def login_for_access_token(
         timedelta(days=REFRESH_EXPIRE_DAYS),
         "refresh",
         db=db,
+        company_id=user.company_id,
     )
 
     # Set tokens in secure HTTP-only cookies

@@ -19,8 +19,9 @@ def create_token(
     expires_delta: timedelta,
     token_type: str,
     db=None,
+    company_id: int | None = None,
 ):
-    encode_dict = {"sub": email, "id": user_id, "role": user_role}
+    encode_dict = {"sub": email, "id": user_id, "role": user_role, "company_id": company_id,}
     expires = datetime.now(timezone.utc) + expires_delta
     encode_dict.update({"exp": expires, "type": token_type, "jti": str(uuid4())})
     encoded_jwt = jwt.encode(encode_dict, SECRET_KEY, algorithm=ALGORITM)
@@ -45,10 +46,11 @@ def verify_token(token: str, expected_type: str, db=None):
         email: str = payload.get("sub")
         user_id: int = payload.get("id")
         user_role: str = payload.get("role")
+        company_id: str = payload.get("company_id")
         token_type: str = payload.get("type")
         jti: str = payload.get("jti")
 
-        if email is None or user_id is None:
+        if email is None or user_id is None or company_id is None:
             raise HTTPException(status_code=401, detail="Couldn't validate user!")
         if token_type != expected_type:
             raise HTTPException(status_code=401, detail="Invalid token type")
@@ -66,6 +68,6 @@ def verify_token(token: str, expected_type: str, db=None):
             db.add(stored)
             db.commit()
 
-        return {"email": email, "id": user_id, "role": user_role}
+        return {"email": email, "id": user_id, "role": user_role, "company_id": company_id}
     except JWTError:
         raise HTTPException(status_code=401, detail="Couldn't validate user!")

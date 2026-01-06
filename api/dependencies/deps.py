@@ -39,19 +39,40 @@ oauth_bearer = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 async def get_current_user(
     request: Request,
+    db: db_dependency,
     token: Annotated[Optional[str], Security(oauth_bearer)],
 ):
 
     # If Swagger sent the token via Authorization header, use it
     if token:
-        return verify_token(token, expected_type="access")
+        return verify_token(token, expected_type="access", db=db)
 
     # Otherwise fallback to cookie
     access_token = request.cookies.get("access_token")
     if not access_token:
         raise HTTPException(status_code=401, detail="No access token found")
 
-    return verify_token(access_token, expected_type="access")
+    return verify_token(access_token, expected_type="access", db=db)
 
 
 user_dependency = Annotated[dict, Depends(get_current_user)]
+
+
+
+def require_company_id(user: user_dependency) -> int:
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=401, detail="Missing company context")
+    return int(company_id)
+
+
+company_id_dependency = Annotated[int, Depends(require_company_id)]
+
+
+def require_admin(user: user_dependency) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+admin_dependency = Annotated[dict, Depends(require_admin)]

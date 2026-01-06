@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     WIX_API_KEY: str
     WIX_ACCOUNT_ID: str
     WIX_SITE_ID: str
+    WIX_APP_ID:str
+    WIX_APP_SECRET:str
+    WIX_PUBLIC_KEY:str
     CORS_ORIGIN: str = "http://localhost:3000"
     DEPLOYMENT_ENVIRONMENT: str = "PROD"
     ACCESS_EXPIRE_MINUTES: int = 15

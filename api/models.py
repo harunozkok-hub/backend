@@ -12,6 +12,27 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 
+class WixInstallation(Base):
+    __tablename__ = "wix_installations"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # The key identifier for a Wix app installation (per site installation)
+    instance_id = Column(String, unique=True, index=True, nullable=False)
+
+    # Site id is often needed for headers like "wix-site-id"
+    site_id = Column(String, index=True, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    company_id = Column(Integer, ForeignKey("companies.id"), unique=True, nullable=False)
+    company = relationship("Company", back_populates="wix_installation")
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
@@ -25,23 +46,63 @@ class RefreshToken(Base):
 
     user = relationship("APIUser", back_populates="refresh_tokens")
 
-    class Config:
-        orm_mode = True
 
+class Company(Base):
+    __tablename__ = "companies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    slug = Column(String, unique=True, index=True, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+        nullable=False,
+    )
+    users = relationship("APIUser", back_populates="company", cascade="all, delete")
+    # 1 company -> 0..1 wix installation (simple version)
+    wix_installation = relationship(
+        "WixInstallation",
+        back_populates="company",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class CompanyInvite(Base):
+    __tablename__ = "company_invites"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    company = relationship("Company")
+
+    code = Column(String, unique=True, index=True, nullable=False)  # store hashed if you want later
+    email = Column(String, index=True, nullable=True)  # optional: bind invite to a specific email
+    role = Column(String, default="user", nullable=False)
+
+    is_used = Column(Boolean, default=False, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
 
 class APIUser(Base):
     __tablename__ = "api_users"
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True)
+    email = Column(String, unique=True, nullable=False, index=True)
     first_name = Column(String)
     last_name = Column(String)
-    hashed_password = Column(String)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    role = Column(String, default="user", nullable=False)
+
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    company = relationship("Company", back_populates="users")
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete"
     )
-    is_active = Column(Boolean, default=True)
-    role = Column(String)
-
 
 # Product route models
 
