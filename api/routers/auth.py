@@ -53,6 +53,10 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
     # 2) company must be unique
     if db.query(Company).filter(Company.slug == company_slug).first():
         raise HTTPException(status_code=400, detail="Company already exists")
+    # enforce accept terms (optional but recommended)
+    if not req.accept_terms:
+        raise HTTPException(status_code=400, detail="Please accept terms & conditions")
+
 
     # Create company + admin user in one transaction
     try:
@@ -66,6 +70,7 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
             last_name=req.last_name,
             hashed_password=bcrypt_context.hash(req.password),
             role="admin",
+            newsletter=bool(req.newsletter),
             company_id=company.id,
         )
         db.add(user)
@@ -81,6 +86,7 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
         "id": user.id,
         "email": user.email,
         "role": user.role,
+        "newsletter": user.newsletter,
         "company_id": user.company_id,
         "company_name": company.name,
         "company_slug": company.slug,
@@ -104,11 +110,16 @@ async def register_with_invite(db: db_dependency, req: RegisterWithInviteRequest
     # email uniqueness
     if db.query(APIUser).filter(APIUser.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
+        # enforce accept terms (optional but recommended)
+    if not req.accept_terms:
+        raise HTTPException(status_code=400, detail="Please accept terms & conditions")
+
 
     user = APIUser(
         email=email,
         first_name=req.first_name,
         last_name=req.last_name,
+        newsletter=bool(req.newsletter),
         hashed_password=bcrypt_context.hash(req.password),
         role=invite.role or "user",
         company_id=invite.company_id,
@@ -121,7 +132,7 @@ async def register_with_invite(db: db_dependency, req: RegisterWithInviteRequest
     db.commit()
     db.refresh(user)
 
-    return {"id": user.id, "email": user.email, "role": user.role, "company_id": user.company_id}
+    return {"id": user.id, "email": user.email, "role": user.role, "company_id": user.company_id, "newsletter": user.newsletter,}
 
 @router.post("/invite", response_model=CreateInviteResponse, status_code=status.HTTP_201_CREATED)
 async def create_invite(
@@ -161,7 +172,7 @@ async def create_invite(
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: db_dependency,
-    response: Response = None,
+    response: Response,
 ):
     user = authenticate_user(form_data.username, form_data.password, db)
     if not user:
@@ -219,6 +230,7 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
         raise HTTPException(status_code=401, detail="Missing refresh token")
 
     payload = verify_token(old_refresh_token, expected_type="refresh", db=db)
+    company_id = payload.get("company_id")
 
     # Optionally check token ID (jti) against DB to prevent reuse
     # e.g., revoke old refresh token here
@@ -231,6 +243,7 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
         timedelta(minutes=ACCESS_EXPIRE_MINUTES),
         "access",
         None,
+        company_id=company_id
     )
     new_refresh_token = create_token(
         payload.get("email"),
@@ -239,13 +252,14 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
         timedelta(days=REFRESH_EXPIRE_DAYS),
         "refresh",
         db=db,
+        company_id=company_id
     )
     # Set both cookies
     response.set_cookie(
         key="access_token",
         value=new_access_token,
         httponly=True,
-        secure=False,
+        secure=False, #change in production
         samesite="Lax",
         max_age=ACCESS_EXPIRE_MINUTES * 60,
         path="/",
@@ -254,7 +268,7 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
         key="refresh_token",
         value=new_refresh_token,
         httponly=True,
-        secure=False,
+        secure=False, # change in production
         samesite="Lax",
         max_age=REFRESH_EXPIRE_DAYS * 86400,
         path="/",

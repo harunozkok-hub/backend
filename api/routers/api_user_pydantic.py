@@ -29,6 +29,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    newsletter: bool
     role: str
     company_id: int
     is_active: bool

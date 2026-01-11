@@ -1,7 +1,7 @@
 from typing import Annotated, Optional
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException, Request, Security
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 
 from settings import get_settings
@@ -35,6 +35,7 @@ bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # creating user dependency to get logged user before functions
 oauth_bearer = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
+
 
 
 async def get_current_user(

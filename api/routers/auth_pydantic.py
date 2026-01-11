@@ -7,11 +7,13 @@ from datetime import datetime
 
 
 class RegisterFirstRequest(BaseModel):
-    company_name: Annotated[str, StringConstraints(min_length=2, max_length=80)]
+    company_name: Annotated[str, StringConstraints(min_length=5, max_length=100)]
     email: EmailStr
-    first_name: Annotated[str, StringConstraints(min_length=2)]
-    last_name: Annotated[str, StringConstraints(min_length=2)]
-    password: Annotated[str, StringConstraints(min_length=8)]
+    first_name: Annotated[str, StringConstraints(min_length=2, max_length=100)]
+    last_name: Annotated[str, StringConstraints(min_length=2, max_length=100)]
+    password: Annotated[str, StringConstraints(min_length=8, max_length=30)]
+    newsletter: Optional[bool] = False
+    accept_terms: bool
 
 
     @field_validator("password")
@@ -41,9 +43,13 @@ class RegisterFirstRequest(BaseModel):
 class RegisterWithInviteRequest(BaseModel):
     invite_code: Annotated[str, StringConstraints(min_length=10)]
     email: EmailStr
-    first_name: Annotated[str, StringConstraints(min_length=2)]
-    last_name: Annotated[str, StringConstraints(min_length=2)]
-    password: Annotated[str, StringConstraints(min_length=8)]
+    first_name: Annotated[str, StringConstraints(min_length=2, max_length=100)]
+    last_name: Annotated[str, StringConstraints(min_length=2, max_length=100)]
+    password: Annotated[str, StringConstraints(min_length=8, max_length=128)]
+    newsletter: Optional[bool] = False
+    accept_terms: bool
+
+
 
     @field_validator("password")
     @classmethod

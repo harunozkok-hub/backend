@@ -94,6 +94,7 @@ class APIUser(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     first_name = Column(String)
     last_name = Column(String)
+    newsletter = Column(Boolean, default=False, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     role = Column(String, default="user", nullable=False)
