@@ -10,7 +10,14 @@ class Settings(BaseSettings):
     WIX_APP_ID:str
     WIX_APP_SECRET:str
     WIX_PUBLIC_KEY:str
+
+    BREVO_API_KEY: str
+    BREVO_API_URL: str = "https://api.brevo.com/v3/smtp/email"
+    BREVO_SENDER_EMAIL: str
+    BREVO_SENDER_NAME: str = "Hoops"
+
     CORS_ORIGIN: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:3000"
     DEPLOYMENT_ENVIRONMENT: str = "PROD"
     ACCESS_EXPIRE_MINUTES: int = 15
     REFRESH_EXPIRE_DAYS: int = 7

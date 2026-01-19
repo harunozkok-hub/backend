@@ -20,7 +20,8 @@ from dependencies.deps import (
     HTTP_ONLY_COOKIE_SECURE,
     SWAGGER_ACTIVE,
 )
-from services.token_service import verify_token, create_token
+from helpers.email import send_confirmation_mail
+from services.token_service import verify_token, create_token, revoke_refresh_token
 from models import APIUser, Company, CompanyInvite
 
 
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 def authenticate_user(email: str, password: str, db):
+    email = email.lower().strip()
     user = db.query(APIUser).filter(APIUser.email == email).first()
     if not user:
         return False
@@ -82,14 +84,25 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
         # Handles race conditions (two people try same company/email at same time)
         raise HTTPException(status_code=409, detail="Email or company already exists")
 
+    try:
+        await send_confirmation_mail(
+            email= user.email,
+            user_id= user.id,
+            user_role= user.role,
+            first_name=user.first_name,
+            last_name =user.last_name,
+            company_name = company.name
+        )
+        email_sent=True
+    except Exception as e:
+        email_sent=False
+        pass
+
     return {
+        "email_sent": email_sent,
         "id": user.id,
         "email": user.email,
-        "role": user.role,
-        "newsletter": user.newsletter,
-        "company_id": user.company_id,
-        "company_name": company.name,
-        "company_slug": company.slug,
+        "role": user.role
     }
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -168,6 +181,24 @@ async def create_invite(
 
     return {"invite_code": code}
 
+@router.get("/confirm-email", status_code=status.HTTP_200_OK)
+def confirm_email(token: str, db: db_dependency):
+    payload = verify_token(token, expected_type="email_confirm")
+    user_id = payload.get("id")
+
+    user = db.query(APIUser).filter(APIUser.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.email_verified:
+        raise HTTPException(
+            status_code=409, detail="Email was already verified"
+        )
+
+    user.email_verified = True
+    db.commit()
+    return {"message": "Email confirmed"}
+
 @router.post("/login", status_code=status.HTTP_200_OK)
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -177,6 +208,8 @@ async def login_for_access_token(
     user = authenticate_user(form_data.username, form_data.password, db)
     if not user:
         raise HTTPException(status_code=401, detail="Couldn't validate user!")
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Please verify your email before logging in!")
 
     access_token = create_token(
         user.email,
@@ -232,9 +265,6 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
     payload = verify_token(old_refresh_token, expected_type="refresh", db=db)
     company_id = payload.get("company_id")
 
-    # Optionally check token ID (jti) against DB to prevent reuse
-    # e.g., revoke old refresh token here
-
     # Create new tokens
     new_access_token = create_token(
         payload.get("email"),
@@ -259,7 +289,7 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
         key="access_token",
         value=new_access_token,
         httponly=True,
-        secure=False, #change in production
+        secure=HTTP_ONLY_COOKIE_SECURE,
         samesite="Lax",
         max_age=ACCESS_EXPIRE_MINUTES * 60,
         path="/",
@@ -268,7 +298,7 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
         key="refresh_token",
         value=new_refresh_token,
         httponly=True,
-        secure=False, # change in production
+        secure=HTTP_ONLY_COOKIE_SECURE,
         samesite="Lax",
         max_age=REFRESH_EXPIRE_DAYS * 86400,
         path="/",
@@ -278,8 +308,14 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(response: Response, request:Request, db: db_dependency):
+    available_refresh_token = request.cookies.get("refresh_token")
+    revoked = revoke_refresh_token(available_refresh_token, db)
+    if revoked:
+        add_message = " and tokens deleted"
+    else:
+        add_message=""
     # Clear cookies
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
-    return {"message": "Logged out"}
+    return {"message": f"Logged out{add_message}"}

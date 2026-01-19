@@ -2,9 +2,9 @@ from jose import jwt, JWTError
 from fastapi import HTTPException
 from datetime import timedelta, timezone, datetime
 from uuid import uuid4
-from sqlalchemy.orm import Session
+from typing import Optional
 
-from models import RefreshToken
+from models import RefreshToken, APIUser
 from settings import get_settings
 
 settings = get_settings()
@@ -37,6 +37,7 @@ def create_token(
         )
         db.commit()
 
+
     return encoded_jwt
 
 
@@ -50,15 +51,17 @@ def verify_token(token: str, expected_type: str, db=None):
         token_type: str = payload.get("type")
         jti: str = payload.get("jti")
 
-        if email is None or user_id is None or company_id is None:
+        if email is None or user_id is None:
             raise HTTPException(status_code=401, detail="Couldn't validate user!")
         if token_type != expected_type:
             raise HTTPException(status_code=401, detail="Invalid token type")
+        if expected_type in ("access", "refresh") and company_id is None:
+            raise HTTPException(status_code=401, detail="Wrong company id")
 
         # Only check jti for refresh tokens
         if token_type == "refresh" and db:
             stored = db.query(RefreshToken).filter_by(jti=jti).first()
-            if not stored or stored.used:
+            if not stored or stored.used or stored.revoked:
                 raise HTTPException(
                     status_code=401, detail="Refresh token reused or invalid"
                 )
@@ -68,6 +71,33 @@ def verify_token(token: str, expected_type: str, db=None):
             db.add(stored)
             db.commit()
 
+
         return {"email": email, "id": user_id, "role": user_role, "company_id": company_id}
     except JWTError:
         raise HTTPException(status_code=401, detail="Couldn't validate user!")
+    
+
+def revoke_refresh_token(refresh_cookie: Optional[str], db) -> bool:
+    """
+    Revoke the refresh token for the current device/session (cookie-based).
+    Returns True if token was found and revoked.
+    """
+    if not refresh_cookie:
+        return False
+
+    try:
+        payload = jwt.decode(refresh_cookie, SECRET_KEY, algorithms=[ALGORITM])
+        jti: str = payload.get("jti")
+        if not jti:
+            return False
+    except Exception:
+        # invalid/expired token -> nothing to revoke
+        return False
+
+    token_row = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
+    if not token_row:
+        return False
+
+    token_row.revoked = True
+    db.commit()
+    return True

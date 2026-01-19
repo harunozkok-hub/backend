@@ -65,11 +65,11 @@ async def change_password(
         raise HTTPException(status_code=401, detail="Authentication Failed")
     
     user_model = db.query(APIUser).filter(APIUser.id == user.get("id")).first()
-    if not bcrypt_context.verify(user_password_verification.password, user_model.hashed_password):
-        raise HTTPException(status_code=400, detail="Wrong password")
-    
     if not user_model:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if not bcrypt_context.verify(user_password_verification.password, user_model.hashed_password):
+        raise HTTPException(status_code=400, detail="Wrong password")
     
     if bcrypt_context.verify(user_password_verification.new_password, user_model.hashed_password):
         raise HTTPException(status_code=400, detail="New password cannot be the same as old one")

@@ -41,7 +41,8 @@ class RefreshToken(Base):
     user_id = Column(Integer, ForeignKey("api_users.id"), nullable=False)
     jti = Column(String, unique=True, index=True)
     expires_at = Column(DateTime, nullable=False)
-    used = Column(Boolean, default=False)
+    used = Column(Boolean, default=False, nullable=False)
+    revoked = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc))
 
     user = relationship("APIUser", back_populates="refresh_tokens")
@@ -98,6 +99,7 @@ class APIUser(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     role = Column(String, default="user", nullable=False)
+    email_verified = Column(Boolean, default=False, nullable=False)
 
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
     company = relationship("Company", back_populates="users")

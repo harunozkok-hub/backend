@@ -14,7 +14,7 @@ def cleanup_expired_refresh_tokens():
     try:
         deleted = (
             db.query(RefreshToken)
-            .filter((RefreshToken.expires_at < now) | (RefreshToken.used == True))
+            .filter((RefreshToken.expires_at < now) | (RefreshToken.used == True) | (RefreshToken.revoked == True))
             .delete(synchronize_session=False)
         )
         db.commit()

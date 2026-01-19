@@ -14,7 +14,7 @@ settings = get_settings()
 
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(cleanup_expired_refresh_tokens, "interval", hours=6)  # every 6h
+scheduler.add_job(cleanup_expired_refresh_tokens, "interval", hours=24)  # every 6h
 
 
 @asynccontextmanager

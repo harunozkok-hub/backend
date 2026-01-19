@@ -41,6 +41,7 @@ class RefreshTokenResponse(BaseModel):
     user_id: int
     jti: str
     used: bool
+    revoked: bool
     expires_at: datetime
     created_at: datetime
 

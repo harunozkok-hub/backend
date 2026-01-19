@@ -10,12 +10,17 @@ from services.token_service import verify_token
 
 settings = get_settings()
 
+FRONTEND_URL = settings.FRONTEND_URL
 SECRET_KEY = settings.AUTH_SECRET_KEY
 ALGORITM = settings.AUTH_ALGORITM
 ACCESS_EXPIRE_MINUTES = settings.ACCESS_EXPIRE_MINUTES
 REFRESH_EXPIRE_DAYS = settings.REFRESH_EXPIRE_DAYS
 HTTP_ONLY_COOKIE_SECURE = settings.HTTP_ONLY_COOKIE_SECURE
 SWAGGER_ACTIVE = settings.SWAGGER_ACTIVE
+BREVO_SENDER_EMAIL = settings.BREVO_SENDER_EMAIL
+BREVO_SENDER_NAME = settings.BREVO_SENDER_NAME
+BREVO_API_KEY = settings.BREVO_API_KEY
+BREVO_API_URL = settings.BREVO_API_URL
 
 
 # creating db dependency to be called in db operations
