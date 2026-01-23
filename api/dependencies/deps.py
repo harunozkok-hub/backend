@@ -13,6 +13,7 @@ settings = get_settings()
 FRONTEND_URL = settings.FRONTEND_URL
 SECRET_KEY = settings.AUTH_SECRET_KEY
 ALGORITM = settings.AUTH_ALGORITM
+COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES = settings.COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES
 ACCESS_EXPIRE_MINUTES = settings.ACCESS_EXPIRE_MINUTES
 REFRESH_EXPIRE_DAYS = settings.REFRESH_EXPIRE_DAYS
 HTTP_ONLY_COOKIE_SECURE = settings.HTTP_ONLY_COOKIE_SECURE
@@ -25,11 +26,9 @@ BREVO_API_URL = settings.BREVO_API_URL
 
 # creating db dependency to be called in db operations
 def get_db():
-    db = SessionLocal()
-    try:
+    with SessionLocal as db:
         yield db
-    finally:
-        db.close()
+
 
 
 db_dependency = Annotated[Session, Depends(get_db)]

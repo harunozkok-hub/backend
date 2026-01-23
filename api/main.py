@@ -17,8 +17,11 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(cleanup_expired_refresh_tokens, "interval", hours=24)  # every 6h
 
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
     if settings.SCHEDULER_ACTIVE:
         scheduler.start()
     yield  # app runs during this period
@@ -40,9 +43,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
 models.Base.metadata.create_all(bind=engine)
+
 app.include_router(auth.router)
 app.include_router(api_user.router)
 app.include_router(product.router)

@@ -38,6 +38,9 @@ class RegisterFirstRequest(BaseModel):
     @classmethod
     def clean_company(cls, value: str) -> str:
         return value.strip()
+    
+class ResendConfirmationRequest(BaseModel):
+    email: EmailStr
 
 
 class RegisterWithInviteRequest(BaseModel):

@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
+
 from settings import get_settings
 
 settings = get_settings()
@@ -13,6 +13,7 @@ if settings.DEPLOYMENT_ENVIRONMENT == "DEV":
 else:
     engine = create_engine(settings.DATABASE_URL)
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False)
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass

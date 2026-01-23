@@ -44,26 +44,26 @@ def create_token(
 def verify_token(token: str, expected_type: str, db=None):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITM])
+        token_type: str = payload.get("type")
+        if token_type != expected_type:
+            raise HTTPException(status_code=401, detail="Invalid or expired request")
         email: str = payload.get("sub")
         user_id: int = payload.get("id")
         user_role: str = payload.get("role")
         company_id: str = payload.get("company_id")
-        token_type: str = payload.get("type")
         jti: str = payload.get("jti")
 
         if email is None or user_id is None:
             raise HTTPException(status_code=401, detail="Couldn't validate user!")
-        if token_type != expected_type:
-            raise HTTPException(status_code=401, detail="Invalid token type")
         if expected_type in ("access", "refresh") and company_id is None:
-            raise HTTPException(status_code=401, detail="Wrong company id")
+            raise HTTPException(status_code=401, detail="Wrong request - different customer")
 
         # Only check jti for refresh tokens
-        if token_type == "refresh" and db:
+        if expected_type == "refresh" and db:
             stored = db.query(RefreshToken).filter_by(jti=jti).first()
             if not stored or stored.used or stored.revoked:
                 raise HTTPException(
-                    status_code=401, detail="Refresh token reused or invalid"
+                    status_code=401, detail="Invalid request - maybe logged out"
                 )
 
             # Invalidate the refresh token to prevent reuse

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     CORS_ORIGIN: str = "http://localhost:3000"
     FRONTEND_URL: str = "http://localhost:3000"
     DEPLOYMENT_ENVIRONMENT: str = "PROD"
+    COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES:int = 5
     ACCESS_EXPIRE_MINUTES: int = 15
     REFRESH_EXPIRE_DAYS: int = 7
     AUTH_SECRET_KEY: str

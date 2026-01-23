@@ -10,7 +10,8 @@ from routers.auth_pydantic import (
     CreateInviteRequest, 
     CreateInviteResponse, 
     RegisterFirstRequest, 
-    RegisterWithInviteRequest)
+    RegisterWithInviteRequest,
+    ResendConfirmationRequest)
 from dependencies.deps import (
     db_dependency,
     admin_dependency,
@@ -19,6 +20,7 @@ from dependencies.deps import (
     REFRESH_EXPIRE_DAYS,
     HTTP_ONLY_COOKIE_SECURE,
     SWAGGER_ACTIVE,
+    COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES
 )
 from helpers.email import send_confirmation_mail
 from services.token_service import verify_token, create_token, revoke_refresh_token
@@ -94,6 +96,8 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
             company_name = company.name
         )
         email_sent=True
+        user.email_verification_sent_at = datetime.now(timezone.utc)
+        db.commit()
     except Exception as e:
         email_sent=False
         pass
@@ -181,8 +185,54 @@ async def create_invite(
 
     return {"invite_code": code}
 
+@router.post("/resend-confirmation", status_code=status.HTTP_200_OK)
+async def resend_email_confirmation(
+    req: ResendConfirmationRequest,
+    db: db_dependency,
+):
+    email = req.email.lower().strip()
+
+    user = db.query(APIUser).filter(APIUser.email == email).first()
+
+    # ✅ Always return 200 (anti user-enumeration)
+    if not user:
+        return {
+            "message": "If the email exists, a confirmation link has been sent."
+        }
+
+    if user.email_verified:
+        return {
+            "message": "Email is already verified."
+        }
+
+    # ⏳ basic cooldown (e.g. 5 minutes)
+    now = datetime.now(timezone.utc)
+    if user.email_verification_sent_at:
+        delta = now - user.email_verification_sent_at
+        if delta < timedelta(minutes=COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES):
+            return {
+                "message": "Please wait a few minutes before requesting another email."
+            }
+
+    # Send email
+        await send_confirmation_mail(
+            email= user.email,
+            user_id= user.id,
+            user_role= user.role,
+            first_name=user.first_name,
+            last_name =user.last_name,
+            company_name = user.company.name if user.company else "" 
+        )
+
+    user.email_verification_sent_at = now
+    db.commit()
+
+    return {
+        "message": "If the email exists, a confirmation link has been sent."
+    }
+
 @router.get("/confirm-email", status_code=status.HTTP_200_OK)
-def confirm_email(token: str, db: db_dependency):
+async def confirm_email(token: str, db: db_dependency):
     payload = verify_token(token, expected_type="email_confirm")
     user_id = payload.get("id")
 
