@@ -22,9 +22,12 @@ from dependencies.deps import (
     SWAGGER_ACTIVE,
     COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES
 )
+from helpers.cookie import clear_cookie
 from helpers.email import send_confirmation_mail
 from services.token_service import verify_token, create_token, revoke_refresh_token
-from models import APIUser, Company, CompanyInvite
+from models import APIUser, Company, CompanyInvite, UserRole
+from tasks.seed_company_role_defaults import ensure_company_role_defaults
+from tasks.seed_permissions import seed_permission_catalog
 
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -50,11 +53,8 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
     company_name = req.company_name.strip()
     company_slug = company_slugify(company_name)
 
-    # 1) email must be unique
-    if db.query(APIUser).filter(APIUser.email == email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
 
-    # 2) company must be unique
+    # company must be unique
     if db.query(Company).filter(Company.slug == company_slug).first():
         raise HTTPException(status_code=400, detail="Company already exists")
     # enforce accept terms (optional but recommended)
@@ -67,13 +67,18 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
         company = Company(name=company_name, slug=company_slug)
         db.add(company)
         db.flush()  # gives company.id
+        # ✅ ensure permission catalog exists (global)
+        seed_permission_catalog(db)
+
+        # ✅ create per-company role defaults (admin/manager/member/viewer)
+        ensure_company_role_defaults(db, company_id=company.id)
 
         user = APIUser(
             email=email,
             first_name=req.first_name,
             last_name=req.last_name,
             hashed_password=bcrypt_context.hash(req.password),
-            role="admin",
+            role=UserRole.admin,
             newsletter=bool(req.newsletter),
             company_id=company.id,
         )
@@ -90,7 +95,7 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
         await send_confirmation_mail(
             email= user.email,
             user_id= user.id,
-            user_role= user.role,
+            user_role= user.role.value,
             first_name=user.first_name,
             last_name =user.last_name,
             company_name = company.name
@@ -106,7 +111,7 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
         "email_sent": email_sent,
         "id": user.id,
         "email": user.email,
-        "role": user.role
+        "role": user.role.value
     }
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -215,14 +220,14 @@ async def resend_email_confirmation(
             }
 
     # Send email
-        await send_confirmation_mail(
-            email= user.email,
-            user_id= user.id,
-            user_role= user.role,
-            first_name=user.first_name,
-            last_name =user.last_name,
-            company_name = user.company.name if user.company else "" 
-        )
+    await send_confirmation_mail(
+        email= user.email,
+        user_id= user.id,
+        user_role= user.role,
+        first_name=user.first_name,
+        last_name =user.last_name,
+        company_name = user.company.name if user.company else "" 
+    )
 
     user.email_verification_sent_at = now
     db.commit()
@@ -238,7 +243,7 @@ async def confirm_email(token: str, db: db_dependency):
 
     user = db.query(APIUser).filter(APIUser.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=401, detail="User not found")
 
     if user.email_verified:
         raise HTTPException(
@@ -360,12 +365,13 @@ async def refresh_token(db: db_dependency, request: Request, response: Response)
 @router.post("/logout")
 async def logout(response: Response, request:Request, db: db_dependency):
     available_refresh_token = request.cookies.get("refresh_token")
-    revoked = revoke_refresh_token(available_refresh_token, db)
-    if revoked:
-        add_message = " and tokens deleted"
-    else:
-        add_message=""
-    # Clear cookies
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/")
+
+    revoked = False
+    if available_refresh_token:
+        revoked = revoke_refresh_token(available_refresh_token, db)
+
+    clear_cookie(response, "access_token")
+    clear_cookie(response, "refresh_token")
+
+    add_message = " and tokens deleted" if revoked else ""
     return {"message": f"Logged out{add_message}"}

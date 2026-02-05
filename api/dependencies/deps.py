@@ -26,8 +26,11 @@ BREVO_API_URL = settings.BREVO_API_URL
 
 # creating db dependency to be called in db operations
 def get_db():
-    with SessionLocal as db:
+    db = SessionLocal()
+    try:
         yield db
+    finally:
+        db.close()
 
 
 
@@ -38,7 +41,7 @@ db_dependency = Annotated[Session, Depends(get_db)]
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # creating user dependency to get logged user before functions
-oauth_bearer = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
+oauth_bearer = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
 

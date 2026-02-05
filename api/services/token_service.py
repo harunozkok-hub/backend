@@ -58,13 +58,21 @@ def verify_token(token: str, expected_type: str, db=None):
         if expected_type in ("access", "refresh") and company_id is None:
             raise HTTPException(status_code=401, detail="Wrong request - different customer")
 
-        # Only check jti for refresh tokens
+        # ✅ Only check jti + user existence for refresh tokens
         if expected_type == "refresh" and db:
             stored = db.query(RefreshToken).filter_by(jti=jti).first()
             if not stored or stored.used or stored.revoked:
                 raise HTTPException(
                     status_code=401, detail="Invalid request - maybe logged out"
                 )
+            # ✅ 2) user still exists check
+            user_model = db.query(APIUser).filter(APIUser.id == user_id).first()
+            if not user_model:
+                # optionally revoke the refresh token record too
+                stored.revoked = True
+                db.add(stored)
+                db.commit()
+                raise HTTPException(status_code=401, detail="User no longer exists")
 
             # Invalidate the refresh token to prevent reuse
             stored.used = True

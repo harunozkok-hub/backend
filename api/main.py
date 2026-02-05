@@ -5,33 +5,34 @@ import models
 from database import engine
 from settings import get_settings
 from apscheduler.schedulers.background import BackgroundScheduler
+from app_summary import api_title, api_description
 
 from routers import auth, api_user, product
 from tasks.cleanup import cleanup_expired_refresh_tokens
+from tasks.seed_permissions import seed_permission_catalog
 
 
 settings = get_settings()
 
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(cleanup_expired_refresh_tokens, "interval", hours=24)  # every 6h
-
-
+scheduler.add_job(cleanup_expired_refresh_tokens, "interval", hours=24)  # every 24h
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
+    seed_permission_catalog()
     if settings.SCHEDULER_ACTIVE:
         scheduler.start()
     yield  # app runs during this period
     scheduler.shutdown()  # cleanly stop on shutdown
 
-
 app = FastAPI(
-    title="SAP Backend",
+    title=api_title,
     docs_url="/docs" if settings.SWAGGER_ACTIVE else None,
+    description=api_description,
     redoc_url=None,
+    #openapi_url=tags_metadata,
     lifespan=lifespan,
 )
 

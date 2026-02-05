@@ -11,7 +11,7 @@ class RegisterFirstRequest(BaseModel):
     email: EmailStr
     first_name: Annotated[str, StringConstraints(min_length=2, max_length=100)]
     last_name: Annotated[str, StringConstraints(min_length=2, max_length=100)]
-    password: Annotated[str, StringConstraints(min_length=8, max_length=30)]
+    password: Annotated[str, StringConstraints(min_length=8, max_length=128)]
     newsletter: Optional[bool] = False
     accept_terms: bool
 
@@ -59,7 +59,7 @@ class RegisterWithInviteRequest(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not re.search(r"[A-Z]", value):
             raise ValueError("Password must contain an uppercase letter")
-        if not re.search(r"[A-z]", value):
+        if not re.search(r"[a-z]", value):
             raise ValueError("Password must contain a lowercase letter")
         if not re.search(r"\d", value):
             raise ValueError("Password must contain a number")
