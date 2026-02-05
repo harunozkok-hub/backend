@@ -1,14 +1,40 @@
+from sqlalchemy.orm import Session
+from database import SessionLocal
 from models import Permission
 from defaults.permissions import ALL_MODULES
-from dependencies.deps import db_dependency
 
-def seed_permission_catalog(db: db_dependency) -> None:
-    existing = {m for (m,) in db.query(Permission.module).all()}
+def seed_permission_catalog(db: Session | None = None, *, commit: bool | None = None) -> None:
+    """
+    Seeds the Permission catalog.
 
-    to_add = [m for m in ALL_MODULES if m not in existing]
-    if not to_add:
-        return
+    - If db is None: opens its own session and commits (startup/script safe)
+    - If db is provided: flushes by default (caller controls commit)
+    """
+    own_session = False
+    if db is None:
+        db = SessionLocal()
+        own_session = True
 
-    for m in to_add:
-        db.add(Permission(module=m, label=m.replace("_", " ").title()))
-    db.commit()
+    try:
+        existing = {m for (m,) in db.query(Permission.module).all()}
+        missing = [m for m in ALL_MODULES if m not in existing]
+        if not missing:
+            return
+
+        for m in missing:
+            db.add(Permission(module=m, label=m.replace("_", " ").title()))
+
+        # default behavior:
+        # - own session => commit
+        # - external session => flush
+        if commit is None:
+            commit = own_session
+
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+
+    finally:
+        if own_session:
+            db.close()

@@ -67,11 +67,8 @@ async def create_user(db: db_dependency, req: RegisterFirstRequest):
         company = Company(name=company_name, slug=company_slug)
         db.add(company)
         db.flush()  # gives company.id
-        # ✅ ensure permission catalog exists (global)
-        seed_permission_catalog(db)
-
-        # ✅ create per-company role defaults (admin/manager/member/viewer)
-        ensure_company_role_defaults(db, company_id=company.id)
+        seed_permission_catalog(db, commit=False)
+        ensure_company_role_defaults(db, company_id=company.id, commit=False)
 
         user = APIUser(
             email=email,
