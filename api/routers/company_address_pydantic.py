@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator, StringConstraints
-from typing import Literal, Annotated
+from typing import Literal, Annotated, Optional
 from datetime import datetime
 
 CompanyAddressType = Literal["hq", "billing"]
@@ -12,7 +12,7 @@ class CompanyAddressUpsert(BaseModel):
     region: Annotated[str | None, StringConstraints(min_length=2, max_length=120)] = None
     postal_code: Annotated[str, StringConstraints(min_length=2, max_length=30)]
     country_code: str
-    phone: Annotated[str | None, StringConstraints(min_length=2, max_length=30)]
+    phone: Annotated[str | None, StringConstraints(min_length=2, max_length=30)] = None
 
     @field_validator("country_code")
     @classmethod
@@ -31,3 +31,7 @@ class CompanyAddressResponse(CompanyAddressUpsert):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+class CompanyAddressesResponse(BaseModel):
+    hq: Optional[CompanyAddressResponse] = None
+    billing: Optional[CompanyAddressResponse] = None

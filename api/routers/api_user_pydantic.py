@@ -6,10 +6,17 @@ from models import UserRole
 
 PasswordStr = Annotated[str, StringConstraints(min_length=8, max_length=128)]
 
+
 class CompanyUpdate(BaseModel):
-    display_name: Annotated[str | None, StringConstraints(min_length=2, max_length=255)] = None
-    legal_name: Annotated[str | None, StringConstraints(min_length=2, max_length=255)] = None
-    vat_number: Annotated[str | None, StringConstraints(min_length=2, max_length=100)] = None
+    display_name: Annotated[
+        str | None, StringConstraints(min_length=2, max_length=255)
+    ] = None
+    legal_name: Annotated[
+        str | None, StringConstraints(min_length=2, max_length=255)
+    ] = None
+    vat_number: Annotated[
+        str | None, StringConstraints(min_length=5, max_length=100)
+    ] = None
     billing_email: EmailStr | None = None
     phone: str | None = None
 
@@ -37,8 +44,8 @@ class CompanyUpdate(BaseModel):
             raise ValueError("phone max length is 30")
         return v
 
+
 class CompanyResponse(BaseModel):
-    id: int
     name: str
     slug: str
     display_name: str | None = None
@@ -49,12 +56,14 @@ class CompanyResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
 class CompanyResponseLimited(BaseModel):
     name: str
     display_name: str | None = None
     legal_name: str | None = None
 
     model_config = {"from_attributes": True}
+
 
 class UserPassVerification(BaseModel):
     password: PasswordStr
@@ -73,11 +82,18 @@ class UserPassVerification(BaseModel):
         if not re.search(r"[#?!@$%^_&*\-]", value):
             raise ValueError("Password must contain a special character")
         return value
-    
+
+
 class UserProfileUpdate(BaseModel):
-    first_name: Annotated[str | None, StringConstraints(min_length=2, max_length=100)] = None
-    last_name: Annotated[str | None, StringConstraints(min_length=2, max_length=100)] = None
-    job_title: Annotated[str | None, StringConstraints(min_length=2, max_length=100)] = None
+    first_name: Annotated[
+        str | None, StringConstraints(min_length=2, max_length=100)
+    ] = None
+    last_name: Annotated[
+        str | None, StringConstraints(min_length=2, max_length=100)
+    ] = None
+    job_title: Annotated[
+        str | None, StringConstraints(min_length=2, max_length=100)
+    ] = None
     phone: str | None = None
     newsletter: bool | None = None
 
@@ -87,7 +103,7 @@ class UserProfileUpdate(BaseModel):
         if value is None:
             return None
         return value.strip().title()
-    
+
     @field_validator("job_title", mode="before")
     @classmethod
     def clean_job_title(cls, value: str) -> str:
@@ -104,6 +120,7 @@ class UserProfileUpdate(BaseModel):
         if len(v) > 30:
             raise ValueError("phone max length is 30")
         return v
+
 
 class UserResponse(BaseModel):
     email: EmailStr

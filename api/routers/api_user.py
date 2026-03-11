@@ -2,15 +2,31 @@ from fastapi import APIRouter, HTTPException
 from models import APIUser, RefreshToken, CompanyAddress, Company
 from starlette import status
 
-from services.permissions import get_effective_permission_modules, attach_effective_permissions_for_company_users
-from routers.api_user_pydantic import UserPassVerification, UserResponse, RefreshTokenResponse, UserProfileUpdate, CompanyResponse, CompanyUpdate
-from routers.company_address_pydantic import CompanyAddressResponse, CompanyAddressUpsert
+from helpers.vatlayer import vatlayer_validate
+from services.permissions import (
+    get_effective_permission_modules,
+    attach_effective_permissions_for_company_users,
+)
+from routers.api_user_pydantic import (
+    UserPassVerification,
+    UserResponse,
+    RefreshTokenResponse,
+    UserProfileUpdate,
+    CompanyResponse,
+    CompanyUpdate,
+)
+from routers.company_address_pydantic import (
+    CompanyAddressesResponse,
+    CompanyAddressResponse,
+    CompanyAddressUpsert,
+    CompanyAddressType,
+)
 from dependencies.deps import (
     db_dependency,
     bcrypt_context,
     user_dependency,
     admin_dependency,
-    company_id_dependency
+    company_id_dependency,
 )
 
 
@@ -29,8 +45,11 @@ async def get_user(user: user_dependency, db: db_dependency):
 
     return user_model
 
+
 @router.patch("/profile", response_model=UserResponse, status_code=status.HTTP_200_OK)
-async def update_profile(user: user_dependency, db: db_dependency, payload: UserProfileUpdate):
+async def update_profile(
+    user: user_dependency, db: db_dependency, payload: UserProfileUpdate
+):
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
@@ -54,8 +73,11 @@ async def update_profile(user: user_dependency, db: db_dependency, payload: User
     user_model.permissions = get_effective_permission_modules(db, user_model)
     return user_model
 
+
 @router.get("/company", response_model=CompanyResponse, status_code=status.HTTP_200_OK)
-async def get_company(admin: admin_dependency, company_id: company_id_dependency, db: db_dependency):
+async def get_company(
+    admin: admin_dependency, company_id: company_id_dependency, db: db_dependency
+):
     if admin is None:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
@@ -65,8 +87,16 @@ async def get_company(admin: admin_dependency, company_id: company_id_dependency
 
     return company_model
 
-@router.patch("/company", response_model=CompanyResponse, status_code=status.HTTP_200_OK)
-async def update_company(admin: admin_dependency, company_id: company_id_dependency, db: db_dependency, payload: CompanyUpdate):
+
+@router.patch(
+    "/company", response_model=CompanyResponse, status_code=status.HTTP_200_OK
+)
+async def update_company(
+    admin: admin_dependency,
+    company_id: company_id_dependency,
+    db: db_dependency,
+    payload: CompanyUpdate,
+):
     if admin is None:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
@@ -81,6 +111,36 @@ async def update_company(admin: admin_dependency, company_id: company_id_depende
     data.pop("slug", None)
     data.pop("name", None)
 
+    # Normalize + validate VAT number (only if client is trying to update it)
+    if "vat_number" in data:
+        vat = data["vat_number"]
+
+        # allow clearing vat_number via null or empty string
+        if vat is None or vat.strip() == "":
+            data["vat_number"] = None
+        else:
+            vat = vat.strip().upper().replace(" ", "")
+            result = await vatlayer_validate(vat)
+
+            # If the syntax is wrong or VAT isn't valid -> reject update
+            # Response contains "valid" and "format_valid" :contentReference[oaicite:3]{index=3}
+            if not result.get("format_valid", False) or not result.get("valid", False):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid VAT number",
+                )
+
+            # Optional: if VATlayer says DB is down, you can decide whether to block or allow
+            # result.get("database") can be "ok" or "failure" :contentReference[oaicite:4]{index=4}
+            if result.get("database") == "failure":
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="VAT validation database temporarily unavailable",
+                )
+
+            # store normalized VAT
+            data["vat_number"] = vat
+
     for k, v in data.items():
         setattr(company_model, k, v)
 
@@ -89,31 +149,44 @@ async def update_company(admin: admin_dependency, company_id: company_id_depende
     db.refresh(company_model)
     return company_model
 
-@router.get("/company-addresses", status_code=status.HTTP_200_OK)
-async def get_company_addresses(admin: admin_dependency, company_id: company_id_dependency, db: db_dependency):
+
+@router.get(
+    "/company-addresses",
+    response_model=CompanyAddressesResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_company_addresses(
+    admin: admin_dependency, company_id: company_id_dependency, db: db_dependency
+):
     if admin is None:
         raise HTTPException(status_code=401, detail="Authentication failed")
     rows = (
-        db.query(CompanyAddress)
-        .filter(CompanyAddress.company_id == company_id)
-        .all()
+        db.query(CompanyAddress).filter(CompanyAddress.company_id == company_id).all()
     )
 
-    out = {"hq": None, "billing": None}
+    hq = None
+    billing = None
+
     for row in rows:
-        # since type is stored as string
-        if row.type in out:
-            out[row.type] = CompanyAddressResponse.model_validate(row)
-    return out
+        if row.type == "hq":
+            hq = row
+        elif row.type == "billing":
+            billing = row
+
+    return CompanyAddressesResponse(hq=hq, billing=billing)
 
 
-@router.put("/company-address/{addr_type}", response_model=CompanyAddressResponse, status_code=status.HTTP_200_OK)
+@router.put(
+    "/company-address/{addr_type}",
+    response_model=CompanyAddressResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def upsert_company_address(
-    addr_type: str,
+    addr_type: CompanyAddressType,
     payload: CompanyAddressUpsert,
     admin: admin_dependency,
     company_id: company_id_dependency,
-    db: db_dependency
+    db: db_dependency,
 ):
     if admin is None:
         raise HTTPException(status_code=401, detail="Authentication failed")
@@ -148,8 +221,13 @@ async def upsert_company_address(
     db.refresh(new_addr)
     return new_addr
 
-@router.get("/company-users",response_model=list[UserResponse], status_code=status.HTTP_200_OK)
-async def get_users(admin: admin_dependency, company_id: company_id_dependency, db: db_dependency):
+
+@router.get(
+    "/company-users", response_model=list[UserResponse], status_code=status.HTTP_200_OK
+)
+async def get_users(
+    admin: admin_dependency, company_id: company_id_dependency, db: db_dependency
+):
     # return only users in the admin's company
     users = (
         db.query(APIUser)
@@ -167,7 +245,9 @@ async def get_users(admin: admin_dependency, company_id: company_id_dependency, 
     response_model=list[RefreshTokenResponse],
     status_code=status.HTTP_200_OK,
 )
-async def get_refresh_tokens(admin: admin_dependency, company_id: company_id_dependency, db: db_dependency):
+async def get_refresh_tokens(
+    admin: admin_dependency, company_id: company_id_dependency, db: db_dependency
+):
     # IMPORTANT:
     # RefreshToken table only has user_id, so scope tokens via join to APIUser.company_id
     return (
@@ -187,17 +267,23 @@ async def change_password(
 ):
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication Failed")
-    
+
     user_model = db.query(APIUser).filter(APIUser.id == user.get("id")).first()
     if not user_model:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if not bcrypt_context.verify(user_password_verification.password, user_model.hashed_password):
+    if not bcrypt_context.verify(
+        user_password_verification.password, user_model.hashed_password
+    ):
         raise HTTPException(status_code=400, detail="Wrong password")
-    
-    if bcrypt_context.verify(user_password_verification.new_password, user_model.hashed_password):
-        raise HTTPException(status_code=400, detail="New password cannot be the same as old one")
-    
+
+    if bcrypt_context.verify(
+        user_password_verification.new_password, user_model.hashed_password
+    ):
+        raise HTTPException(
+            status_code=400, detail="New password cannot be the same as old one"
+        )
+
     user_model.hashed_password = bcrypt_context.hash(
         user_password_verification.new_password
     )

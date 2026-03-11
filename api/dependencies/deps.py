@@ -13,7 +13,9 @@ settings = get_settings()
 FRONTEND_URL = settings.FRONTEND_URL
 SECRET_KEY = settings.AUTH_SECRET_KEY
 ALGORITM = settings.AUTH_ALGORITM
-COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES = settings.COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES
+COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES = (
+    settings.COOLDOWN_RESEND_VERIFICATION_MAIL_MINUTES
+)
 ACCESS_EXPIRE_MINUTES = settings.ACCESS_EXPIRE_MINUTES
 REFRESH_EXPIRE_DAYS = settings.REFRESH_EXPIRE_DAYS
 HTTP_ONLY_COOKIE_SECURE = settings.HTTP_ONLY_COOKIE_SECURE
@@ -22,6 +24,8 @@ BREVO_SENDER_EMAIL = settings.BREVO_SENDER_EMAIL
 BREVO_SENDER_NAME = settings.BREVO_SENDER_NAME
 BREVO_API_KEY = settings.BREVO_API_KEY
 BREVO_API_URL = settings.BREVO_API_URL
+VATLAYER_API_URL = settings.VATLAYER_API_URL
+VATLAYER_API_KEY = settings.VATLAYER_API_KEY
 
 
 # creating db dependency to be called in db operations
@@ -33,7 +37,6 @@ def get_db():
         db.close()
 
 
-
 db_dependency = Annotated[Session, Depends(get_db)]
 
 
@@ -42,7 +45,6 @@ bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # creating user dependency to get logged user before functions
 oauth_bearer = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
-
 
 
 async def get_current_user(
@@ -64,7 +66,6 @@ async def get_current_user(
 
 
 user_dependency = Annotated[dict, Depends(get_current_user)]
-
 
 
 def require_company_id(user: user_dependency) -> int:

@@ -1,8 +1,8 @@
-
+from sqlalchemy.orm import Session
 from collections import defaultdict
 from models import APIUser, Permission, CompanyRolePermission, UserPermissionOverride
 
-def get_effective_permission_modules(db: None, user_model: APIUser) -> list[str]:
+def get_effective_permission_modules(db: Session, user_model: APIUser) -> list[str]:
     # 1) base permissions from company role defaults
     base_module = {
         module
@@ -34,7 +34,7 @@ def get_effective_permission_modules(db: None, user_model: APIUser) -> list[str]
     return sorted(base_module)
 
 
-def attach_effective_permissions_for_company_users(db: None, users: list[APIUser]) -> None:
+def attach_effective_permissions_for_company_users(db: Session, users: list[APIUser]) -> None:
     if not users:
         return
 
